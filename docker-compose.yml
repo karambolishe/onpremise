@@ -1,49 +1,46 @@
-# NOTE: This docker-compose.yml is meant to be just an example of how
-# you could accomplish this on your own. It is not intended to work in
-# all use-cases and must be adapted to fit your needs. This is merely
-# a guideline.
-
-# See docs.getsentry.com/on-premise/server/ for full
-# instructions
-
 version: '2'
 services:
   base:
     build: .
     environment:
-      # Run `docker-compose run web config generate-secret-key`
-      # to get the SENTRY_SECRET_KEY value.
-      # SENTRY_SECRET_KEY: ''
-      SENTRY_MEMCACHED_HOST: memcached
+      SENTRY_SECRET_KEY: 'VERY SECRET KEY'
       SENTRY_REDIS_HOST: redis
       SENTRY_POSTGRES_HOST: postgres
-      SENTRY_EMAIL_HOST: smtp
+      SENTRY_RABBITMQ_HOST: rabbitmq
+      SENTRY_ELASTICSEARCH_HOST: elasticsearch
+      SENTRY_USE_SSL: 0
+
+      SENTRY_WEB_PROTOCOL: uwsgi
+      SENTRY_WEB_WORKERS: 8
+      # SENTRY_EMAIL_HOST: smtp
     volumes:
       - ./data/sentry:/var/lib/sentry/files
-
-  smtp:
-    image: tianon/exim4
-
-  memcached:
-    image: memcached:1.4
-
-  redis:
-    image: redis:3.2-alpine
-
-  postgres:
-    image: postgres:9.5
-    volumes:
-      - ./data/postgres:/var/lib/postgresql/data
+      - ./sentry.conf.py:/etc/sentry/sentry.conf.py
 
   web:
     extends: base
     links:
       - redis
       - postgres
-      - memcached
-      - smtp
+      - rabbitmq
+      - elasticsearch
+      # - smtp
     ports:
       - '9000:9000'
+
+  static:
+    extends: base
+    links:
+      - redis
+      - postgres
+      - rabbitmq
+      - elasticsearch
+      # - smtp
+    environment:
+      SENTRY_WEB_PROTOCOL: http
+      SENTRY_WEB_WORKERS: 1
+    ports:
+      - '9001:9000'
 
   cron:
     extends: base
@@ -51,14 +48,62 @@ services:
     links:
       - redis
       - postgres
-      - memcached
-      - smtp
+      - rabbitmq
+      - elasticsearch
+      # - smtp
 
   worker:
     extends: base
-    command: run worker
+    command: run worker -c 8
     links:
       - redis
       - postgres
-      - memcached
-      - smtp
+      - rabbitmq
+      - elasticsearch
+      # - smtp
+
+  redis:
+    image: redis:3.2
+    ports:
+      - '6379:6379'
+    volumes:
+      - ./data/redis:/data
+
+  postgres:
+    image: postgres:9.5
+    ports:
+      - '5432:5432'
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+
+  rabbitmq:
+    image: rabbitmq:3.6-management
+    ports:
+      - '15672:15672'
+      - '5672:5672'
+    environment:
+      RABBITMQ_NODENAME: rabbit@localhost
+      RABBITMQ_ERLANG_COOKIE: 'cookie'
+    volumes:
+      - ./data/rabbitmq:/var/lib/rabbitmq
+
+  elasticsearch:
+    image: elasticsearch:5.2
+    ports:
+      - '9200:9200'
+    volumes:
+      - './data/elasticsearch:/usr/share/elasticsearch/data'
+
+  nginx:
+    image: nginx:1.12
+    links:
+      - web
+      - static
+    ports:
+      - '80:80'
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf
+    command: [nginx, '-g', 'daemon off;']
+
+  # smtp:
+  #   image: tianon/exim4
