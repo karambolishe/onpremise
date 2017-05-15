@@ -1,4 +1,4 @@
 django-redis
 django-redis-sessions-fork
-librabbitmq
+librabbitmq==1.6.1
 sentry_elastic_nodestore
